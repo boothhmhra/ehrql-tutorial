@@ -25,6 +25,8 @@ hba1c_codes = codelist_from_csv(
     "codelists/nhsd-primary-care-domain-refsets-ifcchbam_cod.csv", column="code"
 )
 
+# show(clinical_events)
+
 # Question 0
 # Create an event frame by filtering clinical_events to find just the records indicating a diabetes
 # diagnosis. (Use the diabetes_codes codelist.)
@@ -34,27 +36,49 @@ questions[0].check(
 
 # Question 1
 # Create a patient series containing the date of each patient's earliest diabetes diagnosis.
-questions[1].check(...)
 # If you need a hint for this, or any other, question, just uncomment (remove the #) from the following line:
 # questions[1].hint()
+
+earliest_diagnosis_date = (clinical_events.where(clinical_events.snomedct_code.is_in(diabetes_codes))
+        .sort_by(clinical_events.date)
+        .first_for_patient()
+        .date
+    
+)
+# show(earliest_diagnosis_date)
+questions[1].check(earliest_diagnosis_date)
+
 
 # Question 2
 # Create a patient series containing the date of each patient's earliest structured education
 # programme referral. (Use the referral_code codelist.)
-questions[2].check(...)
+
+earliest_referral_date = (clinical_events.where(clinical_events.snomedct_code.is_in(referral_codes))
+        .sort_by(clinical_events.date)
+        .first_for_patient()
+        .date
+        )
+questions[2].check(earliest_referral_date)
 # questions[2].hint()
 
 # Question 3
 # Create a boolean patient series indicating whether the date of each patient's earliest diabetes
 # diagnosis was between 1st April 2023 and 31st March 2024. If the patient does not have a
 # diagnosis, the value for in this series should be False.
-questions[3].check(...)
+diagnosis_date_in_study_period = (
+    earliest_diagnosis_date.is_not_null()
+    & earliest_diagnosis_date.is_on_or_between("2023-04-01", "2024-03-31")
+    )
+
+questions[3].check(diagnosis_date_in_study_period)
 # questions[3].hint()
 
 # Question 4
 # Create a patient series indicating the number of months between a patient's earliest diagnosis
 # and their earliest referral.
-questions[4].check(...)
+months_diagnosis2referral = (earliest_referral_date-earliest_diagnosis_date).months
+# show(months_diagnosis2referral)
+questions[4].check(months_diagnosis2referral)
 # questions[4].hint()
 
 # Question 5
@@ -62,18 +86,42 @@ questions[4].check(...)
 # the first time in the year between 1st April 2023 and 31st March 2024, and who have a record of
 # being referred to a structured education programme within nine months after their diagnosis.
 
-questions[5].check(...)
+eligible_pats = (
+    earliest_diagnosis_date.is_not_null()
+    & earliest_diagnosis_date.is_on_or_between("2023-04-01", "2024-03-31")
+    & earliest_referral_date.is_not_null()
+    & earliest_referral_date.is_on_or_between(
+        earliest_diagnosis_date,
+        earliest_diagnosis_date + months(9),    
+))
+questions[5].check(eligible_pats)
 # questions[5].hint()
 
 # Question 6
 # Create a patient series with the date of the latest record of mild frailty for each patient.
-questions[6].check(...)
+latest_mild_frailty_date = (
+    clinical_events.where(clinical_events.snomedct_code.is_in(mild_frailty_codes))
+    .sort_by(clinical_events.date)
+    .last_for_patient()
+    .date
+)
+questions[6].check(latest_mild_frailty_date)
 # questions[6].hint()
 
 # Question 7
 # Create a patient series with the date of the latest record of moderate or severe frailty for
 # each patient.
-questions[7].check(...)
+latest_mod_severe_frailty_date = (
+    clinical_events.where(
+        clinical_events.snomedct_code.is_in(moderate_frailty_codes)
+        |clinical_events.snomedct_code.is_in(severe_frailty_codes)
+        )
+    .sort_by(clinical_events.date)
+    .last_for_patient()
+    .date
+)
+
+questions[7].check(latest_mod_severe_frailty_date)
 # questions[7].hint()
 
 # Question 8
@@ -83,18 +131,36 @@ questions[7].check(...)
 # Create a boolean patient series indicating whether a patient has moderate or severe frailty, i.e
 # where the patient's last record of severity is moderate or severe. If the patient does not have
 # a record of frailty, the value in this series should be False.
-questions[8].check(...)
+latest_frailty_status = (
+    latest_mod_severe_frailty_date.is_not_null()
+    & (latest_mild_frailty_date.is_null()
+       | (latest_mod_severe_frailty_date.is_after(latest_mild_frailty_date))
+)
+)
+questions[8].check(latest_frailty_status)
 # questions[8].hint()
 
 # Question 9
 # Create a patient series containing the latest HbA1c measurement for each patient.
-questions[9].check(...)
+last_HbA1c = (
+    clinical_events.where(clinical_events.snomedct_code.is_in(hba1c_codes))
+    .sort_by(clinical_events.date)
+    .last_for_patient()
+    .numeric_value
+)
+questions[9].check(last_HbA1c)
 # questions[9].hint()
 
 # Question 10
 # Create a boolean patient series identifying patients without moderate or severe frailty in whom
 # the last IFCC-HbA1c is 58 mmol/mol or less
-questions[10].check(...)
+no_mod_severe_frailty_low_hba1c = (
+    ~ latest_frailty_status
+    & last_HbA1c.is_not_null()
+    & (last_HbA1c <=58)
+)
+
+questions[10].check(no_mod_severe_frailty_low_hba1c)
 # questions[10].hint()
 
 questions.summarise()
